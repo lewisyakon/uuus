@@ -109,7 +109,7 @@ MtpInterface::Enable(const uint32_t threadCount, const uint32_t systemCount)
     if (ui.Get() == 0)
     {
         g_period = std::ceil(std::log2(g_systemCount) / 4 + 1);
-        NS_LOG_INFO("Secheduling period is automatically set to " << g_period);
+        NS_LOG_INFO("Scheduling period is automatically set to " << g_period);
     }
     else
     {
@@ -144,7 +144,7 @@ MtpInterface::EnableNew(const uint32_t newSystemCount)
     if (ui.Get() == 0)
     {
         g_period = std::ceil(std::log2(g_systemCount) / 4 + 1);
-        NS_LOG_INFO("Secheduling period is automatically set to " << g_period);
+        NS_LOG_INFO("Scheduling period is automatically set to " << g_period);
     }
     else
     {
@@ -185,7 +185,6 @@ MtpInterface::Run()
         ProcessOneRound();
         CalculateSmallestTime();
     }
-    NS_LOG_INFO("*** Run success ");
     RunAfter();
 }
 
