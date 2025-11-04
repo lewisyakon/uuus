@@ -5,7 +5,6 @@
 #include "ns3/packet-socket-helper.h"
 #include "ns3/mac48-address.h"
 #include <vector>
-#include "ns3/mobility-module.h"     // 用于设置节点位置
 #include "ns3/point-to-point-module.h"
 #include "ns3/mpi-module.h"
 
@@ -16,8 +15,10 @@
 #include "ns3/three-phase-protocol.h"
 #include "ns3/mtp-module.h"
 
+#include <numeric>
 #include <mutex>
 #include <iostream>
+#include <unistd.h>
 
 #define LOCAL(r) ((r) == conf::rank)
 #define LOG(content)                                                                               \
@@ -29,6 +30,7 @@
 NS_LOG_COMPONENT_DEFINE ("FatTreeBridgeTopology");
 
 using namespace ns3;
+static const int mx_sys = 32;
 
 namespace conf
 {
@@ -580,33 +582,6 @@ int main(int argc, char *argv[]) {
         // 示例：n-to-n：全网通信，从10.0s开始
         ScheduleAllToAll(ntonstart, hosts, payloadSize);
     }
-    
-
-//可视化配置-----------------------------------------------------------------------------------------------------------------------
-    MobilityHelper mobility;
-    Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator>();
-
-    double xStep = 10.0;   // 同之间的水平间距
-    double yStep = 15.0;   // 不同层内节点垂直间距
-    double xOffset = 0.0;  //额外水平偏移
-
-    //核心层交换机位置
-    xOffset = xStep * k/4;
-    for (uint32_t i = 0; i < numCores; i++) positionAlloc->Add(Vector(i * (xStep*k)+xOffset, 0.0, 0.0));
-    //汇聚层
-    for (uint32_t i = 0; i < numAggregations; i++) positionAlloc->Add(Vector(i * (xStep*(k/2)), yStep, 0.0));
-    //边缘层
-    for (uint32_t i = 0; i < numEdges; i++) positionAlloc->Add(Vector(i * (xStep*(k/2)), yStep*2, 0.0));
-    //主机（服务器）
-    for (uint32_t i = 0; i < numHosts; i++) positionAlloc->Add(Vector(i * xStep, yStep*3, 0.0));
-    
-    mobility.SetPositionAllocator(positionAlloc);
-    mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");//强制固定位置
-    mobility.Install(coreSwitches);
-    mobility.Install(aggregationSwitches);
-    mobility.Install(edgeSwitches);
-    mobility.Install(hosts);
-
 
 // 为每个主机的 NetDevice 绑定 Tx 和 Rx 跟踪
     for (uint32_t i = 0; i < hosts.GetN(); ++i) {
@@ -706,9 +681,40 @@ int main(int argc, char *argv[]) {
     // //主机（服务器）
     // for (uint32_t i = 0; i < numHosts; i++) NS_LOG_INFO("host nodeId : " << hosts.Get(i)->GetId() << " systemId: " << hosts.Get(i)->GetSystemId());
 
-    Simulator::Destroy();
     LOG("仿真结束。");
+    uint64_t eventCount = Simulator::GetEventCount();
+    char myHostname[256];
+    gethostname(myHostname, 256);
+    
+    uint64_t eventCounts[mx_sys];
+    char allHostname[mx_sys][256];
+    MPI_Gather(&eventCount,
+               1,
+               MPI_UNSIGNED_LONG_LONG,
+               eventCounts,
+               1,
+               MPI_UNSIGNED_LONG_LONG,
+               0,
+               MpiInterface::GetCommunicator());
 
+    MPI_Gather(myHostname,
+		    256,
+		    MPI_CHAR,
+		    allHostname,
+		    256,
+		    MPI_CHAR,
+		    0,
+		    MpiInterface::GetCommunicator());
+    LOG("\n- Done!");
+    for (uint32_t i = 0; i < conf::system; i++)
+    {
+	std::string hostnameStr(allHostname[i]);
+        LOG("  Event count of LP " << i << " = " << eventCounts[i]
+		       	<< " in " << hostnameStr);
+    }
+    LOG("  Event count = " << std::accumulate(eventCounts, eventCounts + conf::system, 0ULL));
+
+    Simulator::Destroy();
     MpiInterface::Disable();
     return 0;
 }
