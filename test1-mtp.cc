@@ -14,6 +14,7 @@
 #include "ns3/min-hop-bridge-net-device.h"
 #include "ns3/three-phase-protocol.h"
 #include "ns3/mtp-module.h"
+#include "ns3/random-variable-stream.h"
 
 #include <mutex>
 
@@ -259,21 +260,115 @@ void ScheduleAllToAll(double startSeconds,NodeContainer hosts,uint32_t payloadSi
     }
 }
 
+void SchedulePodToPod(uint32_t k,
+                      double startSeconds, int count, double waittime,
+                      NodeContainer hosts, uint32_t payloadSize)
+{
+    const uint16_t proto = 0x9999;
+    const uint32_t numHosts = hosts.GetN();
+
+    const uint32_t pods = k;
+    const uint32_t hostsPerPod = numHosts / pods;
+
+    Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable>();
+
+    auto pickHostInPod = [&](uint32_t podIdx) -> uint32_t {
+        const uint32_t begin = podIdx * hostsPerPod;
+        const uint32_t end   = begin + hostsPerPod - 1;
+        return uv->GetInteger(begin, end);
+    };
+
+    double t = startSeconds;
+
+    for (int round = 0; round < count; ++round) {
+        // 1) 源 pod
+        const uint32_t srcPod = uv->GetInteger(0, pods - 1);
+
+        // 2) 在该 pod 随机两台不同的源主机
+        const uint32_t srcBegin = srcPod * hostsPerPod;
+        const uint32_t srcEnd   = srcBegin + hostsPerPod - 1;
+        uint32_t srcH1 = uv->GetInteger(srcBegin, srcEnd);
+        uint32_t srcH2;
+        do { srcH2 = uv->GetInteger(srcBegin, srcEnd); } while (srcH2 == srcH1);
+
+        // 3) 随机两个不同且不等于源 pod 的目的 pod
+        uint32_t dstPod1, dstPod2;
+        do { dstPod1 = uv->GetInteger(0, pods - 1); } while (dstPod1 == srcPod);
+        do { dstPod2 = uv->GetInteger(0, pods - 1); } while (dstPod2 == srcPod || dstPod2 == dstPod1);
+
+        // 4) 各在目的 pod 内随机 1 台主机作为接收端
+        const uint32_t dstH1 = pickHostInPod(dstPod1);
+        const uint32_t dstH2 = pickHostInPod(dstPod2);
+
+        // 5) 为两个接收端各装一个 server
+        //    （与现有调度函数风格一致：每次发送都创建 server/client）
+        Ptr<RequestorApp> srv1 = CreateObject<RequestorApp>();
+        srv1->Setup(uint32_t(0), proto);
+        srv1->setdatalen(payloadSize);
+        hosts.Get(dstH1)->AddApplication(srv1);
+        srv1->initialization();
+        srv1->SetStartTime(Seconds(t));
+        srv1->SetStopTime(Seconds(simulationTime));
+
+        Ptr<RequestorApp> srv2 = CreateObject<RequestorApp>();
+        srv2->Setup(uint32_t(0), proto);
+        srv2->setdatalen(payloadSize);
+        hosts.Get(dstH2)->AddApplication(srv2);
+        srv2->initialization();
+        srv2->SetStartTime(Seconds(t));
+        srv2->SetStopTime(Seconds(simulationTime));
+
+        // 6) 构造两个目的地址（物理地址：对端 host 的 device(0)）
+        PacketSocketAddress addr1;
+        addr1.SetSingleDevice(uint32_t(0));
+        addr1.SetPhysicalAddress(hosts.Get(dstH1)->GetDevice(0)->GetAddress());
+        addr1.SetProtocol(proto);
+
+        PacketSocketAddress addr2;
+        addr2.SetSingleDevice(uint32_t(0));
+        addr2.SetPhysicalAddress(hosts.Get(dstH2)->GetDevice(0)->GetAddress());
+        addr2.SetProtocol(proto);
+
+        // 7) 两个源 host 分别装 client，指向各自的目的
+        Ptr<RequestorApp> cli1 = CreateObject<RequestorApp>();
+        cli1->Setup(uint32_t(0), proto);
+        cli1->setdatalen(payloadSize);
+        hosts.Get(srcH1)->AddApplication(cli1);
+        cli1->initialization();
+        cli1->SetStartTime(Seconds(t));
+        cli1->SetStopTime(Seconds(simulationTime));
+        cli1->AddServer(addr1);
+        cli1->TriggerSendTo(0, Seconds(t));
+
+        Ptr<RequestorApp> cli2 = CreateObject<RequestorApp>();
+        cli2->Setup(uint32_t(0), proto);
+        cli2->setdatalen(payloadSize);
+        hosts.Get(srcH2)->AddApplication(cli2);
+        cli2->initialization();
+        cli2->SetStartTime(Seconds(t));
+        cli2->SetStopTime(Seconds(simulationTime));
+        cli2->AddServer(addr2);
+        cli2->TriggerSendTo(0, Seconds(t));
+
+    }
+}
+
+
 
 int main(int argc, char *argv[]) {
-    MtpInterface::Enable(8);
-    Time::SetResolution(Time::FS);
+    // MtpInterface::Enable(4);
+    Time::SetResolution(Time::NS);
     CommandLine cmd;
     cmd.Parse(argc, argv);
 
     // --- 配置参数 ---
-    uint32_t k = 8;
+    uint32_t k = 4;
     int max_jump=5;//最大学习跳数
     int ecmpmodel=1;//ECMP模式；0随机转发，1按包hash
 
     simulationTime = 300.0;
-    const uint32_t TARGET_PACKET_SIZE = 27865;//包大小（含头）
-    int sendmode=2;//发送模式。0表1对1；1表1对N；2表N对N
+    const uint32_t TARGET_PACKET_SIZE = 278650000;//包大小（含头）
+    int sendmode=3;//发送模式。0表1对1；1表1对N；2表N对N; 3表Pod对Pod
 
     double onetoonestart=200.0;
     double onetonstart=200.0;
@@ -474,6 +569,11 @@ int main(int argc, char *argv[]) {
         // 示例：n-to-n：全网通信，从10.0s开始
         ScheduleAllToAll(ntonstart, hosts, payloadSize);
     }
+    else if (sendmode==3){
+        int count=10;
+        double waittime=1.0;
+        SchedulePodToPod(k, onetoonestart, count, waittime, hosts, payloadSize);
+    }
     
 
 //可视化配置-----------------------------------------------------------------------------------------------------------------------
@@ -576,6 +676,9 @@ int main(int argc, char *argv[]) {
     }
     if (sendmode==2){
         NS_LOG_INFO("==> N-to-N  | Completion Time = " << timemax.GetSeconds()-ntonstart);
+    }
+    if (sendmode==3){
+        NS_LOG_INFO("==> Pod-to-Pod | Completion Time = " << timemax.GetSeconds()-onetoonestart);
     }
 
     // //核心层交换机

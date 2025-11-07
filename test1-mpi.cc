@@ -5,6 +5,7 @@
 #include "ns3/packet-socket-helper.h"
 #include "ns3/mac48-address.h"
 #include <vector>
+#include "ns3/mobility-module.h"     // 用于设置节点位置
 #include "ns3/point-to-point-module.h"
 #include "ns3/mpi-module.h"
 
@@ -13,7 +14,6 @@
 #include "ns3/hop-count-client.h"
 #include "ns3/min-hop-bridge-net-device.h"
 #include "ns3/three-phase-protocol.h"
-#include "ns3/mtp-module.h"
 
 #include <numeric>
 #include <mutex>
@@ -150,7 +150,7 @@ DeviceTxCallback(std::string context, Ptr<const Packet> packet)//交换机回调
 void
 RxTraceCallback(std::string context, Ptr<const Packet> packet)//终端回调
 {
-    std::lock_guard<std::mutex> lock(g_logMutex);
+    // std::lock_guard<std::mutex> lock(g_logMutex);
 
     Time rxTime = Simulator::Now();
     g_localRxTimeList.push_back(rxTime);
@@ -358,22 +358,127 @@ void PartitionNodes(uint32_t k,
     }
 }
 
+void SchedulePodToPod(uint32_t k,
+                      double startSeconds, int count, double waittime,
+                      NodeContainer hosts, uint32_t payloadSize)
+{
+    const uint16_t proto = 0x9999;
+    const uint32_t numHosts = hosts.GetN();
+
+    const uint32_t pods = k;
+    const uint32_t hostsPerPod = numHosts / pods;
+
+    Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable>();
+
+    auto pickHostInPod = [&](uint32_t podIdx) -> uint32_t {
+        const uint32_t begin = podIdx * hostsPerPod;
+        const uint32_t end   = begin + hostsPerPod - 1;
+        return uv->GetInteger(begin, end);
+    };
+
+    double t = startSeconds;
+
+    for (int round = 0; round < count; ++round) {
+        // 1) 源 pod
+        const uint32_t srcPod = uv->GetInteger(0, pods - 1);
+
+        // 2) 在该 pod 随机两台不同的源主机
+        const uint32_t srcBegin = srcPod * hostsPerPod;
+        const uint32_t srcEnd   = srcBegin + hostsPerPod - 1;
+        uint32_t srcH1 = uv->GetInteger(srcBegin, srcEnd);
+        uint32_t srcH2;
+        do { srcH2 = uv->GetInteger(srcBegin, srcEnd); } while (srcH2 == srcH1);
+
+        // 3) 随机两个不同且不等于源 pod 的目的 pod
+        uint32_t dstPod1, dstPod2;
+        do { dstPod1 = uv->GetInteger(0, pods - 1); } while (dstPod1 == srcPod);
+        do { dstPod2 = uv->GetInteger(0, pods - 1); } while (dstPod2 == srcPod || dstPod2 == dstPod1);
+
+        // 4) 各在目的 pod 内随机 1 台主机作为接收端
+        const uint32_t dstH1 = pickHostInPod(dstPod1);
+        const uint32_t dstH2 = pickHostInPod(dstPod2);
+
+        Ptr<Node> clientNode1 = hosts.Get(srcH1);
+        Ptr<Node> clientNode2 = hosts.Get(srcH2);
+        if(LOCAL(hosts.Get(dstH1)->GetSystemId()))
+        {
+            // 5) 为两个接收端各装一个 server
+            //    （与现有调度函数风格一致：每次发送都创建 server/client）
+            Ptr<RequestorApp> srv1 = CreateObject<RequestorApp>();
+            srv1->Setup(uint32_t(0), proto);
+            srv1->setdatalen(payloadSize);
+            hosts.Get(dstH1)->AddApplication(srv1);
+            srv1->initialization();
+            srv1->SetStartTime(Seconds(t));
+            srv1->SetStopTime(Seconds(simulationTime));            
+        }
+
+        if(LOCAL(hosts.Get(dstH2)->GetSystemId()))
+        {
+            Ptr<RequestorApp> srv2 = CreateObject<RequestorApp>();
+            srv2->Setup(uint32_t(0), proto);
+            srv2->setdatalen(payloadSize);
+            hosts.Get(dstH2)->AddApplication(srv2);
+            srv2->initialization();
+            srv2->SetStartTime(Seconds(t));
+            srv2->SetStopTime(Seconds(simulationTime));            
+        }
+
+        if(LOCAL(clientNode1->GetSystemId()))
+        {
+            // 6) 构造两个目的地址（物理地址：对端 host 的 device(0)）
+            PacketSocketAddress addr1;
+            addr1.SetSingleDevice(uint32_t(0));
+            addr1.SetPhysicalAddress(hosts.Get(dstH1)->GetDevice(0)->GetAddress());
+            addr1.SetProtocol(proto); 
+            // 7) 两个源 host 分别装 client，指向各自的目的
+            Ptr<RequestorApp> cli1 = CreateObject<RequestorApp>();
+            cli1->Setup(uint32_t(0), proto);
+            cli1->setdatalen(payloadSize);
+            hosts.Get(srcH1)->AddApplication(cli1);
+            cli1->initialization();
+            cli1->SetStartTime(Seconds(t));
+            cli1->SetStopTime(Seconds(simulationTime));
+            cli1->AddServer(addr1);
+            cli1->TriggerSendTo(0, Seconds(t));                       
+        }
+
+        if(LOCAL(clientNode2->GetSystemId()))
+        {
+            PacketSocketAddress addr2;
+            addr2.SetSingleDevice(uint32_t(0));
+            addr2.SetPhysicalAddress(hosts.Get(dstH2)->GetDevice(0)->GetAddress());
+            addr2.SetProtocol(proto);
+
+            Ptr<RequestorApp> cli2 = CreateObject<RequestorApp>();
+            cli2->Setup(uint32_t(0), proto);
+            cli2->setdatalen(payloadSize);
+            hosts.Get(srcH2)->AddApplication(cli2);
+            cli2->initialization();
+            cli2->SetStartTime(Seconds(t));
+            cli2->SetStopTime(Seconds(simulationTime));
+            cli2->AddServer(addr2);
+            cli2->TriggerSendTo(0, Seconds(t));            
+        }
+
+    }
+}
+
 int main(int argc, char *argv[]) {
-    // MtpInterface::Enable(4);
     Initialize(argc, argv);
 
-    Time::SetResolution(Time::FS);
+    Time::SetResolution(Time::NS);
     CommandLine cmd;
     cmd.Parse(argc, argv);
 
     // --- 配置参数 ---
-    uint32_t k = 8;
+    uint32_t k = 4;
     int max_jump=5;//最大学习跳数
     int ecmpmodel=1;//ECMP模式；0随机转发，1按包hash
 
     simulationTime = 300.0;
-    const uint32_t TARGET_PACKET_SIZE = 27865;//包大小（含头）
-    int sendmode=2;//发送模式。0表1对1；1表1对N；2表N对N
+    const uint32_t TARGET_PACKET_SIZE = 278650000;//包大小（含头）
+    int sendmode=3;//发送模式。0表1对1；1表1对N；2表N对N； 3表Pod对Pod
 
     double onetoonestart=200.0;
     double onetonstart=200.0;
@@ -582,6 +687,38 @@ int main(int argc, char *argv[]) {
         // 示例：n-to-n：全网通信，从10.0s开始
         ScheduleAllToAll(ntonstart, hosts, payloadSize);
     }
+    else if (sendmode==3){
+        int count=10;
+        double waittime=1.0;
+        SchedulePodToPod(k, onetoonestart, count, waittime, hosts, payloadSize);
+    }
+    
+
+//可视化配置-----------------------------------------------------------------------------------------------------------------------
+    MobilityHelper mobility;
+    Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator>();
+
+    double xStep = 10.0;   // 同之间的水平间距
+    double yStep = 15.0;   // 不同层内节点垂直间距
+    double xOffset = 0.0;  //额外水平偏移
+
+    //核心层交换机位置
+    xOffset = xStep * k/4;
+    for (uint32_t i = 0; i < numCores; i++) positionAlloc->Add(Vector(i * (xStep*k)+xOffset, 0.0, 0.0));
+    //汇聚层
+    for (uint32_t i = 0; i < numAggregations; i++) positionAlloc->Add(Vector(i * (xStep*(k/2)), yStep, 0.0));
+    //边缘层
+    for (uint32_t i = 0; i < numEdges; i++) positionAlloc->Add(Vector(i * (xStep*(k/2)), yStep*2, 0.0));
+    //主机（服务器）
+    for (uint32_t i = 0; i < numHosts; i++) positionAlloc->Add(Vector(i * xStep, yStep*3, 0.0));
+    
+    mobility.SetPositionAllocator(positionAlloc);
+    mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");//强制固定位置
+    mobility.Install(coreSwitches);
+    mobility.Install(aggregationSwitches);
+    mobility.Install(edgeSwitches);
+    mobility.Install(hosts);
+
 
 // 为每个主机的 NetDevice 绑定 Tx 和 Rx 跟踪
     for (uint32_t i = 0; i < hosts.GetN(); ++i) {
@@ -670,6 +807,9 @@ int main(int argc, char *argv[]) {
     }
     if (sendmode==2){
         LOG("==> N-to-N  | Completion Time = " << maxGlobalRxTime.GetSeconds()-ntonstart);
+    }
+    if (sendmode==3){
+        LOG("==> N-to-N  | Completion Time = " << maxGlobalRxTime.GetSeconds()-onetoonestart);
     }
 
     // //核心层交换机
