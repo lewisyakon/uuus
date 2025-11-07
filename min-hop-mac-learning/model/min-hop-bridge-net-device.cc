@@ -42,7 +42,7 @@ MinHopBridgeNetDevice::GetTypeId()
                           MakeBooleanChecker())
             .AddAttribute("ExpirationTime",
                           "Time it takes for learned MAC state entry to expire.",
-                          TimeValue(Seconds(300)),
+                          TimeValue(Seconds(999999)),
                           MakeTimeAccessor(&MinHopBridgeNetDevice::m_expirationTime),
                           MakeTimeChecker());
     return tid;
@@ -52,7 +52,7 @@ MinHopBridgeNetDevice::MinHopBridgeNetDevice()
     : m_node(nullptr),
       m_ifIndex(0),
       m_mtu(1500),
-      m_expirationTime(Seconds(300)),
+      m_expirationTime(Seconds(999999)),
       m_enableLearning(true),
       m_highWatermark(0.8)
 {
@@ -369,7 +369,7 @@ MinHopBridgeNetDevice::ForwardBroadcast(Ptr<NetDevice> incomingPort,
 bool
 MinHopBridgeNetDevice::Learn(Mac48Address source, Ptr<NetDevice> port, uint8_t hopCount)
 {
-    // NS_LOG_FUNCTION(this << source << " via port " << port->GetIfIndex() << " with hop count " << (uint32_t)hopCount);
+    // NS_LOG_INFO(this << source << " via port " << port->GetIfIndex() << " with hop count " << (uint32_t)hopCount);
     bool flagmin = true;
 
     if (!m_enableLearning)
