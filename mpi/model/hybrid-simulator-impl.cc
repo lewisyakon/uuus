@@ -432,8 +432,8 @@ HybridSimulatorImpl::Partition()
                 visited[node->GetId()] = true;
                 // assign this node the current localSystemId
                 node->SetSystemId(localSystemId << 16 | m_myId);
-                NS_LOG_INFO("node " << node->GetId() << " is set to local system "
-                                    << localSystemId);
+                // NS_LOG_INFO("node " << node->GetId() << " is set to local system "
+                //                     << localSystemId);
 
                 for (uint32_t i = 0; i < node->GetNDevices(); i++)
                 {

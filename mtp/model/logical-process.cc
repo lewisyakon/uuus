@@ -111,6 +111,10 @@ LogicalProcess::CalculateLookAhead()
                 {
                     continue;
                 }
+                if (localNetDevice->IsBridge())
+                {
+                    continue;
+                }
                 Ptr<Channel> channel = localNetDevice->GetChannel();
                 if (!channel)
                 {
@@ -126,6 +130,7 @@ LogicalProcess::CalculateLookAhead()
                 {
                     remoteNode = (channel->GetDevice(0))->GetNode();
                 }
+                // NS_LOG_INFO(" * node a:"<<(*iter)->GetId()<<" node b:"<<remoteNode->GetId());
                 // if it's not remote, don't consider it
                 if (remoteNode->GetSystemId() == m_systemId)
                 {
@@ -145,7 +150,7 @@ LogicalProcess::CalculateLookAhead()
         }
     }
 
-    NS_LOG_INFO("lookahead of system " << m_systemId << " is set to " << m_lookAhead.GetTimeStep());
+    // NS_LOG_INFO("lookahead of system " << m_systemId << " is set to " << m_lookAhead.GetTimeStep());
 }
 
 void

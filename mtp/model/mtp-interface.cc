@@ -43,6 +43,7 @@ void
 MtpInterface::Enable()
 {
 #ifdef NS3_MPI
+    // NS_LOG_INFO("MtpInterface set simulatorimpl as Hybrid ! ! !");
     GlobalValue::Bind("SimulatorImplementationType", StringValue("ns3::HybridSimulatorImpl"));
 #else
     GlobalValue::Bind("SimulatorImplementationType",
@@ -55,6 +56,7 @@ void
 MtpInterface::Enable(const uint32_t threadCount)
 {
 #ifdef NS3_MPI
+    // NS_LOG_INFO(" MtpInterface Enable found NS3_MPI is true ! ! !");
     Config::SetDefault("ns3::HybridSimulatorImpl::MaxThreads", UintegerValue(threadCount));
 #else
     Config::SetDefault("ns3::MultithreadedSimulatorImpl::MaxThreads", UintegerValue(threadCount));

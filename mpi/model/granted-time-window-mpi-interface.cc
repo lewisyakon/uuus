@@ -306,9 +306,11 @@ GrantedTimeWindowMpiInterface::ReceiveMessages()
         }
 
         NS_ASSERT(pNode && pMpiRec);
+        // NS_LOG_INFO("GTW schedule start");
 
         // Schedule the rx event
 #ifdef NS3_MTP
+        // NS_LOG_INFO("GTW receive messages found NS3_MTP is true ! ! !");
         MtpInterface::GetSystem(pNode->GetSystemId() >> 16)
             ->ScheduleAt(pNode->GetId(), rxTime, MakeEvent(&MpiReceiver::Receive, pMpiRec, p));
 #else
@@ -318,7 +320,7 @@ GrantedTimeWindowMpiInterface::ReceiveMessages()
                                        pMpiRec,
                                        p);
 #endif
-
+        // NS_LOG_INFO("GTW schedule success");
         // Re-queue the next read
         MPI_Irecv(g_pRxBuffers[index],
                   MAX_MPI_MSG_SIZE,

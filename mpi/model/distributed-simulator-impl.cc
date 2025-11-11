@@ -355,6 +355,7 @@ void
 DistributedSimulatorImpl::Run()
 {
     NS_LOG_FUNCTION(this);
+    // NS_LOG_INFO("Distributed Simulator impl to run");
 
     CalculateLookAhead();
     m_stop = false;
