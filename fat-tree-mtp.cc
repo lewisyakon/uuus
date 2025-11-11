@@ -223,7 +223,7 @@ double time = 1;
 double interval = 0.1;
 
 // mtp options
-uint32_t thread = 8;
+uint32_t thread = 4;
 }; // namespace conf
 
 void

@@ -359,7 +359,7 @@ void PartitionNodes(uint32_t k,
 }
 
 void SchedulePodToPod(uint32_t k,
-                      double startSeconds, int count, double waittime,
+                      double startSeconds, int count,
                       NodeContainer hosts, uint32_t payloadSize)
 {
     const uint16_t proto = 0x9999;
@@ -376,30 +376,31 @@ void SchedulePodToPod(uint32_t k,
         return uv->GetInteger(begin, end);
     };
 
-    double t = startSeconds;
+    // 1) 源 pod
+    const uint32_t srcPod = uv->GetInteger(0, pods - 1);
+
+    // 2) 在该 pod 随机两台不同的源主机
+    const uint32_t srcBegin = srcPod * hostsPerPod;
+    const uint32_t srcEnd   = srcBegin + hostsPerPod - 1;
+    uint32_t srcH1 = uv->GetInteger(srcBegin, srcEnd);
+    uint32_t srcH2;
+    do { srcH2 = uv->GetInteger(srcBegin, srcEnd); } while (srcH2 == srcH1);
+
+    // 3) 随机两个不同且不等于源 pod 的目的 pod
+    uint32_t dstPod1, dstPod2;
+    do { dstPod1 = uv->GetInteger(0, pods - 1); } while (dstPod1 == srcPod);
+    do { dstPod2 = uv->GetInteger(0, pods - 1); } while (dstPod2 == srcPod || dstPod2 == dstPod1);
+
+    // 4) 各在目的 pod 内随机 1 台主机作为接收端
+    const uint32_t dstH1 = pickHostInPod(dstPod1);
+    const uint32_t dstH2 = pickHostInPod(dstPod2);
+
+    Ptr<Node> clientNode1 = hosts.Get(srcH1);
+    Ptr<Node> clientNode2 = hosts.Get(srcH2);
 
     for (int round = 0; round < count; ++round) {
-        // 1) 源 pod
-        const uint32_t srcPod = uv->GetInteger(0, pods - 1);
+        Time ts = Seconds(startSeconds) + MicroSeconds(uv->GetInteger(0, 50));
 
-        // 2) 在该 pod 随机两台不同的源主机
-        const uint32_t srcBegin = srcPod * hostsPerPod;
-        const uint32_t srcEnd   = srcBegin + hostsPerPod - 1;
-        uint32_t srcH1 = uv->GetInteger(srcBegin, srcEnd);
-        uint32_t srcH2;
-        do { srcH2 = uv->GetInteger(srcBegin, srcEnd); } while (srcH2 == srcH1);
-
-        // 3) 随机两个不同且不等于源 pod 的目的 pod
-        uint32_t dstPod1, dstPod2;
-        do { dstPod1 = uv->GetInteger(0, pods - 1); } while (dstPod1 == srcPod);
-        do { dstPod2 = uv->GetInteger(0, pods - 1); } while (dstPod2 == srcPod || dstPod2 == dstPod1);
-
-        // 4) 各在目的 pod 内随机 1 台主机作为接收端
-        const uint32_t dstH1 = pickHostInPod(dstPod1);
-        const uint32_t dstH2 = pickHostInPod(dstPod2);
-
-        Ptr<Node> clientNode1 = hosts.Get(srcH1);
-        Ptr<Node> clientNode2 = hosts.Get(srcH2);
         if(LOCAL(hosts.Get(dstH1)->GetSystemId()))
         {
             // 5) 为两个接收端各装一个 server
@@ -409,7 +410,7 @@ void SchedulePodToPod(uint32_t k,
             srv1->setdatalen(payloadSize);
             hosts.Get(dstH1)->AddApplication(srv1);
             srv1->initialization();
-            srv1->SetStartTime(Seconds(t));
+            srv1->SetStartTime(ts);
             srv1->SetStopTime(Seconds(simulationTime));            
         }
 
@@ -420,7 +421,7 @@ void SchedulePodToPod(uint32_t k,
             srv2->setdatalen(payloadSize);
             hosts.Get(dstH2)->AddApplication(srv2);
             srv2->initialization();
-            srv2->SetStartTime(Seconds(t));
+            srv2->SetStartTime(ts);
             srv2->SetStopTime(Seconds(simulationTime));            
         }
 
@@ -437,10 +438,10 @@ void SchedulePodToPod(uint32_t k,
             cli1->setdatalen(payloadSize);
             hosts.Get(srcH1)->AddApplication(cli1);
             cli1->initialization();
-            cli1->SetStartTime(Seconds(t));
+            cli1->SetStartTime(ts);
             cli1->SetStopTime(Seconds(simulationTime));
             cli1->AddServer(addr1);
-            cli1->TriggerSendTo(0, Seconds(t));                       
+            cli1->TriggerSendTo(0, ts);                       
         }
 
         if(LOCAL(clientNode2->GetSystemId()))
@@ -455,10 +456,10 @@ void SchedulePodToPod(uint32_t k,
             cli2->setdatalen(payloadSize);
             hosts.Get(srcH2)->AddApplication(cli2);
             cli2->initialization();
-            cli2->SetStartTime(Seconds(t));
+            cli2->SetStartTime(ts);
             cli2->SetStopTime(Seconds(simulationTime));
             cli2->AddServer(addr2);
-            cli2->TriggerSendTo(0, Seconds(t));            
+            cli2->TriggerSendTo(0, ts);            
         }
 
     }
@@ -467,17 +468,17 @@ void SchedulePodToPod(uint32_t k,
 int main(int argc, char *argv[]) {
     Initialize(argc, argv);
 
-    Time::SetResolution(Time::NS);
+    // Time::SetResolution(Time::NS);
     CommandLine cmd;
     cmd.Parse(argc, argv);
 
     // --- 配置参数 ---
-    uint32_t k = 4;
+    uint32_t k = 8;
     int max_jump=5;//最大学习跳数
     int ecmpmodel=1;//ECMP模式；0随机转发，1按包hash
 
     simulationTime = 300.0;
-    const uint32_t TARGET_PACKET_SIZE = 278650000;//包大小（含头）
+    const uint32_t TARGET_PACKET_SIZE = 2786500;//包大小（含头）
     int sendmode=3;//发送模式。0表1对1；1表1对N；2表N对N； 3表Pod对Pod
 
     double onetoonestart=200.0;
@@ -688,9 +689,8 @@ int main(int argc, char *argv[]) {
         ScheduleAllToAll(ntonstart, hosts, payloadSize);
     }
     else if (sendmode==3){
-        int count=10;
-        double waittime=1.0;
-        SchedulePodToPod(k, onetoonestart, count, waittime, hosts, payloadSize);
+        int count=20;
+        SchedulePodToPod(k, onetoonestart, count, hosts, payloadSize);
     }
     
 

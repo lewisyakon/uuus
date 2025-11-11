@@ -320,14 +320,16 @@ Initialize(int argc, char* argv[])
                        StringValue("ns3::ConstantRandomVariable[Constant=0]"));
 
     // simulation settings
-    Time::SetResolution(Time::PS);
+    // Time::SetResolution(Time::PS);
     RngSeedManager::SetSeed(Hash32(conf::seed));
 
     // initialize hybrid
     MtpInterface::Enable(conf::thread);
+    /*
     GlobalValue::Bind("SimulatorImplementationType",
                         StringValue("ns3::HybridSimulatorImpl")); 
     Config::SetDefault("ns3::HybridSimulatorImpl::MaxThreads", UintegerValue(conf::thread));  
+    */
     MpiInterface::Enable(&argc, &argv);
     conf::rank = MpiInterface::GetSystemId();
     conf::system = MpiInterface::GetSize();
@@ -541,11 +543,11 @@ StartSimulation()
 int
 main(int argc, char* argv[])
 {
-    LogComponentEnable("HybridSimulatorImpl",LOG_LEVEL_INFO);
-    // LogComponentEnable("Simulator",LOG_LEVEL_INFO);
-    // LogComponentEnable("DistributedSimulatorImpl",LOG_LEVEL_INFO);
+    // LogComponentEnable("HybridSimulatorImpl",LOG_LEVEL_INFO);
+    LogComponentEnable("LogicalProcess",LOG_LEVEL_INFO);
     // LogComponentEnable("MpiInterface",LOG_LEVEL_INFO);
     // LogComponentEnable("MtpInterface",LOG_LEVEL_INFO);
+    LogComponentEnable("GrantedTimeWindowMpiInterface",LOG_LEVEL_INFO);
     Initialize(argc, argv);
 
 // #ifdef NS3_MPI

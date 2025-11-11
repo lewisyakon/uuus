@@ -543,7 +543,8 @@ StartSimulation()
 int
 main(int argc, char* argv[])
 {
-    LogComponentEnable("GrantedTimeWindowMpiInterface",LOG_LEVEL_INFO);
+    // LogComponentEnable("GrantedTimeWindowMpiInterface",LOG_LEVEL_INFO);
+    // LogComponentEnable("DistributedSimulatorImpl",LOG_LEVEL_INFO);
 
     Initialize(argc, argv);
 
