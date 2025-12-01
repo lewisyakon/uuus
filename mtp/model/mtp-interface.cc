@@ -43,7 +43,6 @@ void
 MtpInterface::Enable()
 {
 #ifdef NS3_MPI
-    // NS_LOG_INFO("MtpInterface set simulatorimpl as Hybrid ! ! !");
     GlobalValue::Bind("SimulatorImplementationType", StringValue("ns3::HybridSimulatorImpl"));
 #else
     GlobalValue::Bind("SimulatorImplementationType",
@@ -56,7 +55,6 @@ void
 MtpInterface::Enable(const uint32_t threadCount)
 {
 #ifdef NS3_MPI
-    // NS_LOG_INFO(" MtpInterface Enable found NS3_MPI is true ! ! !");
     Config::SetDefault("ns3::HybridSimulatorImpl::MaxThreads", UintegerValue(threadCount));
 #else
     Config::SetDefault("ns3::MultithreadedSimulatorImpl::MaxThreads", UintegerValue(threadCount));
@@ -111,7 +109,7 @@ MtpInterface::Enable(const uint32_t threadCount, const uint32_t systemCount)
     if (ui.Get() == 0)
     {
         g_period = std::ceil(std::log2(g_systemCount) / 4 + 1);
-        NS_LOG_INFO("Scheduling period is automatically set to " << g_period);
+        NS_LOG_INFO("Secheduling period is automatically set to " << g_period);
     }
     else
     {
@@ -146,7 +144,7 @@ MtpInterface::EnableNew(const uint32_t newSystemCount)
     if (ui.Get() == 0)
     {
         g_period = std::ceil(std::log2(g_systemCount) / 4 + 1);
-        NS_LOG_INFO("Scheduling period is automatically set to " << g_period);
+        NS_LOG_INFO("Secheduling period is automatically set to " << g_period);
     }
     else
     {
@@ -187,6 +185,7 @@ MtpInterface::Run()
         ProcessOneRound();
         CalculateSmallestTime();
     }
+    NS_LOG_INFO("*** Run success ");
     RunAfter();
 }
 
@@ -297,6 +296,11 @@ void
 MtpInterface::RunAfter()
 {
     // global finished, terminate threads
+    for (uint32_t i = 0;i <= g_systemCount; i++)
+    {
+        NS_LOG_INFO("LP " << i << " : total events : " << g_systems[i].GetEventCount());
+    }
+
     g_systemIndex.store(0, std::memory_order_release);
     for (uint32_t i = 0; i < g_threadCount - 1; i++)
     {

@@ -1,4 +1,7 @@
 # 定义模块源文件
+
+
+
 set(source_files
     model/min-hop-bridge-net-device.cc
     model/hop-count-client.cc
@@ -6,6 +9,9 @@ set(source_files
     model/pause-header.cc
     model/three-phase-protocol.cc
     model/3PHeader.cc
+    model/my_sendflowclient.cc
+    model/PppRoundRobinQueue.cc
+    model/FlowTagHeader.cc
 )
 set(header_files
     model/min-hop-bridge-net-device.h
@@ -14,6 +20,9 @@ set(header_files
     model/pause-header.h
     model/three-phase-protocol.h
     model/3PHeader.h
+    model/my_sendflowclient.h
+    model/PppRoundRobinQueue.h
+    model/FlowTagHeader.h
 )
 
 set(libstats
@@ -21,6 +30,7 @@ set(libstats
     core
     bridge
     internet
+    applications
 )
 
 build_lib(

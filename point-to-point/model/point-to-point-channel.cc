@@ -85,6 +85,9 @@ PointToPointChannel::TransmitStart(Ptr<const Packet> p, Ptr<PointToPointNetDevic
 
     uint32_t wire = src == m_link[0].m_src ? 0 : 1;
 
+    NS_LOG_INFO("[channel] src:"<<src->GetNode()->GetId()<<" -> dst:"<<m_link[wire].m_dst->GetNode()->GetId()<<
+        " size:"<<p->GetSize()<<"\n");
+
     Simulator::ScheduleWithContext(m_link[wire].m_dst->GetNode()->GetId(),
                                    txTime + m_delay,
                                    &PointToPointNetDevice::Receive,

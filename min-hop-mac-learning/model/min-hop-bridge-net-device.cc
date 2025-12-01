@@ -42,7 +42,7 @@ MinHopBridgeNetDevice::GetTypeId()
                           MakeBooleanChecker())
             .AddAttribute("ExpirationTime",
                           "Time it takes for learned MAC state entry to expire.",
-                          TimeValue(Seconds(999999)),
+                          TimeValue(Seconds(500)),
                           MakeTimeAccessor(&MinHopBridgeNetDevice::m_expirationTime),
                           MakeTimeChecker());
     return tid;
@@ -52,7 +52,7 @@ MinHopBridgeNetDevice::MinHopBridgeNetDevice()
     : m_node(nullptr),
       m_ifIndex(0),
       m_mtu(1500),
-      m_expirationTime(Seconds(999999)),
+      m_expirationTime(Seconds(500)),
       m_enableLearning(true),
       m_highWatermark(0.8)
 {
@@ -85,7 +85,10 @@ MinHopBridgeNetDevice::DoDispose()
 void MinHopBridgeNetDevice::set_maxjump(int jump){
     maxjump=jump;
 }
-
+void MinHopBridgeNetDevice::hostsend(Ptr<NetDevice> incomingPort,Ptr<const Packet> packet,uint16_t protocol,
+                    const Address& src,const Address& dst){
+    ScheduleReceive(incomingPort,packet,protocol,src,dst,PacketType::PACKET_OTHERHOST);
+}
 void
 MinHopBridgeNetDevice::ReceiveFromDevice(Ptr<NetDevice> incomingPort,
                                          Ptr<const Packet> packet,
@@ -171,7 +174,7 @@ MinHopBridgeNetDevice::ScheduleReceive(Ptr<NetDevice> incomingPort,
     case PACKET_BROADCAST:
     case PACKET_MULTICAST:
         // Pass up to local applications, then flood to other ports.
-        m_rxCallback(this, p, protocol, src);
+        // m_rxCallback(this, p, protocol, src);
         ForwardBroadcast(incomingPort, p, protocol, src48, dst48);
         break;
 
@@ -258,8 +261,43 @@ MinHopBridgeNetDevice::ecmp(std::vector<Ptr<NetDevice> > outPorts, Mac48Address 
         // NS_LOG_INFO("m_address (converted to MAC): " << m_address);
         return outPorts[index];
     }
-    if (ecmpmodel==2){//best-fit
-        return nullptr;
+    if (ecmpmodel==2){//哈希测试
+        // --- 全部内嵌的小工具 ---
+        auto macToU64 = [](const Mac48Address& a)->uint64_t {
+        uint8_t b[6]; a.CopyTo(b);
+        return (uint64_t)b[0]<<40 | (uint64_t)b[1]<<32 | (uint64_t)b[2]<<24 |
+                (uint64_t)b[3]<<16 | (uint64_t)b[4]<<8  | (uint64_t)b[5];
+        };
+        auto fmix64 = [](uint64_t k)->uint64_t {
+        k ^= k >> 33; k *= 0xff51afd7ed558ccdULL;
+        k ^= k >> 33; k *= 0xc4ceb9fe1a85ec53ULL;
+        k ^= k >> 33; return k;
+        };
+        auto rotl64 = [](uint64_t x, int r)->uint64_t { return (x<<r) | (x>>(64-r)); };
+        auto fastrange64 = [](uint64_t h, uint32_t n)->uint32_t {
+        #if defined(__SIZEOF_INT128__)
+        return (uint32_t)(((__uint128_t)h * n) >> 64); // 无偏
+        #else
+        return (uint32_t)(h % n); // 兜底
+        #endif
+        };
+
+        Mac48Address selfMac = Mac48Address::ConvertFrom(m_address);
+        // 组合键：(src, dst, 本端MAC, uid)
+        // 如需“按流哈希”，把 k4 改成 flow_id（或 {tag,src,dst} 的稳定编码），别用 uid。
+        uint64_t h  = 0x9e3779b97f4a7c15ULL;      // 种子
+        uint64_t k1 = macToU64(src);
+        uint64_t k2 = macToU64(dst);
+        uint64_t k3 = macToU64(selfMac);
+        uint64_t k4 = uid;                        // ← 按包；按流请改为 flow_id
+
+        h ^= fmix64(k1); h = rotl64(h,27) * 0x9ddfea08eb382d69ULL;
+        h ^= fmix64(k2); h = rotl64(h,27) * 0x9ddfea08eb382d69ULL;
+        h ^= fmix64(k3); h = rotl64(h,27) * 0x9ddfea08eb382d69ULL;
+        h ^= fmix64(k4); h = fmix64(h);
+
+        uint32_t idx = fastrange64(h, (uint32_t)outPorts.size());
+        return outPorts[idx];
     }
     return nullptr;
 }
@@ -369,7 +407,7 @@ MinHopBridgeNetDevice::ForwardBroadcast(Ptr<NetDevice> incomingPort,
 bool
 MinHopBridgeNetDevice::Learn(Mac48Address source, Ptr<NetDevice> port, uint8_t hopCount)
 {
-    // NS_LOG_INFO(this << source << " via port " << port->GetIfIndex() << " with hop count " << (uint32_t)hopCount);
+    // NS_LOG_FUNCTION(this << source << " via port " << port->GetIfIndex() << " with hop count " << (uint32_t)hopCount);
     bool flagmin = true;
 
     if (!m_enableLearning)
@@ -801,7 +839,8 @@ MinHopBridgeNetDevice::GetMulticast(Ipv6Address addr) const
 void
 MinHopBridgeNetDevice::PrintLearnedState() const
 {
-    NS_LOG_INFO("Learning State for Bridge on Node " << GetNode()->GetId() << " (Device MAC: " << GetAddress() << ")");
+    NS_LOG_INFO("Learning State for Bridge on Node " << GetNode()->GetId() 
+    << " (Device MAC: " << GetAddress() << ")  Size= "<<m_learnState.size());
     if (m_learnState.empty())
     {
         NS_LOG_INFO("  No learned entries.");
@@ -908,6 +947,43 @@ MinHopBridgeNetDevice::handleLowWatermark(Ptr<NetDevice> port)
 
     Ptr<PointToPointNetDevice> p2pport = DynamicCast<PointToPointNetDevice>(port);
     p2pport -> SubPauseCount(count);
+}
+
+bool
+MinHopBridgeNetDevice::writemactable(std::string filepath){
+    //不好写而且没意义，搁置
+    std::ofstream fout(filepath); // 创建输出文件流并打开文件
+    if (!fout) { // 检查是否打开成功
+        NS_LOG_INFO("打开或创建mac表输出文件时失败");
+        return 0;
+    }
+    int num_mac=m_learnState.size();
+    fout<<std::to_string(num_mac)<<std::endl;
+    for (const auto& [key, value] : m_learnState) {
+        uint8_t buf[6];
+        key.CopyTo(buf);
+        std::ostringstream oss;
+        for (int i = 0; i < 6; ++i) {
+            if (i > 0) oss << ":"; // 加冒号分隔
+            oss << std::hex << (int)buf[i];
+        }
+        std::string macStr = oss.str();
+        fout<<macStr<<std::endl;
+
+        fout<<value.size()<<std::endl;
+        for (auto ai:value){
+            fout<<ai.associatedPort->GetAddress()<<std::endl;
+            fout<<ai.minHopCount<<std::endl;
+        }
+    }
+    fout.close(); // 关闭文件
+    return 1;
+}
+
+bool
+MinHopBridgeNetDevice::readmactable(std::string filepath){
+    //不好写而且没意义，搁置
+    return 1;
 }
 
 } // namespace ns3

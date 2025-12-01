@@ -265,9 +265,6 @@ PointToPointHelper::Install(Ptr<Node> a, Ptr<Node> b)
         {
             useNormalChannel = false;
         }
-	/*
-	 std::cout<<" * * * node="<<a->GetId()<<" rank="<<n1SystemId<<" node="<<b->GetId()<<" rank="<<n2SystemId<<" cur rank="<<currSystemId<<"\n";
-	 */
     }
     if (useNormalChannel)
     {
@@ -284,29 +281,6 @@ PointToPointHelper::Install(Ptr<Node> a, Ptr<Node> b)
         mpiRecB->SetReceiveCallback(MakeCallback(&PointToPointNetDevice::Receive, devB));
         devA->AggregateObject(mpiRecA);
         devB->AggregateObject(mpiRecB);
-	/*	
-       	Ptr<MpiReceiver> pMpiRec = nullptr;
-        pMpiRec = devA->GetObject<MpiReceiver>();
-        if(pMpiRec!=nullptr)
-        {
-            std::cout << "[Bind] node="<< a->GetId()
-          << " rank="<< a->GetSystemId()
-          << " devA.ifIndex="<< devA->GetIfIndex()
-          << " devA.ptr="<< devA
-          << "\n";
-        }
-
-        pMpiRec = nullptr;
-        pMpiRec = devB->GetObject<MpiReceiver>();
-        if(pMpiRec!=nullptr)
-        {
-            std::cout << "[Bind] node="<< b->GetId()
-          << " rank="<< b->GetSystemId()
-          << " devB.ifIndex="<< devB->GetIfIndex()
-          << " devB.ptr="<< devB
-          << "\n";
-        }
-	*/
     }
 #else
     channel = m_channelFactory.Create<PointToPointChannel>();

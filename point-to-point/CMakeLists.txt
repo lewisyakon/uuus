@@ -31,6 +31,5 @@ build_lib(
     model/ppp-header.h
   LIBRARIES_TO_LINK ${libnetwork}
                     ${mpi_libraries}
-                    ${libmin-hop-mac-learning}
   TEST_SOURCES test/point-to-point-test.cc
 )

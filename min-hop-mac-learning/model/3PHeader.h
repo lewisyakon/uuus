@@ -16,12 +16,21 @@ public:
     ACT     = 2,
     IDLE    = 3
   };
-
+  
   ThreePHeader();
   ~ThreePHeader() override;
 
   void SetState(State state);
   State GetState() const;
+  void SetTag(uint32_t tag);
+  uint32_t GetTag() const;
+  void SetSrc(uint32_t src);
+  uint32_t GetSrc() const;
+  void SetDst(uint32_t dst);
+  uint32_t GetDst() const;
+  void SetDataSize(uint64_t dataSize);
+  uint64_t GetDataSize() const;
+
 
   static TypeId GetTypeId();
   TypeId GetInstanceTypeId() const override;
@@ -32,6 +41,10 @@ public:
 
 private:
   uint8_t m_state;
+  uint32_t m_tag;
+  uint64_t m_datasize;
+  uint32_t m_src;
+  uint32_t m_dst;
 };
 
 } // namespace ns3

@@ -181,11 +181,6 @@ DistributedSimulatorImpl::CalculateLookAhead()
                 {
                     continue;
                 }
-                
-                if(localNetDevice->IsBridge())
-                {
-                    continue;
-                }
 
                 // grab the adjacent node
                 Ptr<Node> remoteNode;
@@ -355,7 +350,6 @@ void
 DistributedSimulatorImpl::Run()
 {
     NS_LOG_FUNCTION(this);
-    // NS_LOG_INFO("Distributed Simulator impl to run");
 
     CalculateLookAhead();
     m_stop = false;
@@ -399,15 +393,6 @@ DistributedSimulatorImpl::Run()
             uint32_t totRx = m_pLBTS[0].GetRxCount();
             uint32_t totTx = m_pLBTS[0].GetTxCount();
             m_globalFinished = m_pLBTS[0].IsFinished();
-
-            // if (m_myId == 0) // 只让一个rank打印，避免信息爆炸
-            // {
-            //     NS_LOG_INFO("Syncing at Time: " << Now() 
-            //             << ", GrantedTime: " << m_grantedTime
-            //             << ", NextEvent: " << nextTime
-            //             << ", totRx: " << totRx 
-            //             << ", totTx: " << totTx );
-            // }
 
             for (uint32_t i = 1; i < m_systemCount; ++i)
             {

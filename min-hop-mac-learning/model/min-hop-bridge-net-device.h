@@ -3,6 +3,7 @@
 
 #include <map>
 #include <vector>
+#include <fstream>
 #include "ns3/channel.h"
 #include "ns3/mac48-address.h"
 #include "ns3/net-device.h"
@@ -74,6 +75,12 @@ class MinHopBridgeNetDevice : public NetDevice
     void set_maxjump(int jump);
     
     void Set_switchDelay(Time t);
+
+    bool writemactable(std::string filepath);
+    bool readmactable(std::string filepath);
+
+    void hostsend(Ptr<NetDevice> incomingPort,Ptr<const Packet> packet,uint16_t protocol,
+                    const Address& src,const Address& dst);
 
   protected:
     void DoDispose() override;

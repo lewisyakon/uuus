@@ -83,7 +83,7 @@ MpiInterface::SetParallelSimulatorImpl()
     if (GlobalValue::GetValueByNameFailSafe("SimulatorImplementationType", simulationTypeValue))
     {
         std::string simulationType = simulationTypeValue.Get();
-        
+
         // Set communication interface based on the simulation type being used.
         // Defaults to synchronous.
         if (simulationType == "ns3::NullMessageSimulatorImpl")
