@@ -129,7 +129,7 @@ int main1() {
 
 std::cout << "Running Simulation.\n";
   fflush(stdout);
-  NS_LOG_INFO("Run Simulation.");
+  NS_LOG_INFO("Run Simulation.");    
 
   endt = clock();
   return 0;

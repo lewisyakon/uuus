@@ -268,13 +268,13 @@ int main(int argc, char *argv[]) {
     cmd.Parse(argc, argv);
 
     // --- 配置参数 ---
-    uint32_t k = 4;
+    uint32_t k = 16;
     int max_jump=5;//最大学习跳数
     int ecmpmodel=1;//ECMP模式；0随机转发，1按包hash
 
     simulationTime = 300.0;
     const uint32_t TARGET_PACKET_SIZE = 27865;//包大小（含头）
-    int sendmode=1;//发送模式。0表1对1；1表1对N；2表N对N
+    int sendmode=3;//发送模式。0表1对1；1表1对N；2表N对N
 
     double onetoonestart=200.0;
     double onetonstart=200.0;

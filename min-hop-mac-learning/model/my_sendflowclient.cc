@@ -249,6 +249,7 @@ sendflowclient::TriggerSendTo_now(PacketSocketAddress dstadd,uint64_t datasize,u
 {
   // NS_LOG_INFO("[" << this->GetNode()->GetId() << "]" << "TriggerSendTo_now declared now time = "  << Simulator::Now().GetFemtoSeconds()
   //             <<"  sendsize = "<<datasize<<"  dest = "<<dstadd);
+  NS_LOG_INFO("[TriSend] src="<<src<<" dst="<<dst<<" tag="<<tag<<" size="<<datasize);
   // SendPacket(ThreePHeader::REQUEST, dstadd, datasize, tag,src,dst,sendmodel);
   if(datasize == 1024)
   {

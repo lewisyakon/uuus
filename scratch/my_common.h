@@ -36,7 +36,9 @@
 #include "ns3/three-phase-protocol.h"
 #include "ns3/mtp-module.h"
 #include "ns3/my_sendflowclient.h"
+#ifdef NS3_MPI
 #include "ns3/mpi-interface.h"
+#endif
 
 #include <mutex>
 #include <map>
@@ -91,7 +93,7 @@ void SetConfig(){
     nvswitch_per_server=1;
     ecmpmodel=1;//ECMP模式；0随机转发，1按包hash
     max_jump=5;//最大5跳
-    floadtime=200;//泛红时间200秒
+    floadtime=999;//泛红时间200秒
     m_mtu=4096;
     normallink_rate="224Gbps";
     nvlink_rate="2400Gbps";
@@ -99,10 +101,10 @@ void SetConfig(){
     nvlink_delay="15ns";
     DropTailQueue_size="1000000p";
 
-    Topology_model=2;//0--FatTree;1--Clos;2--FullMesh;3--Torus;4--Test
+    Topology_model=0;//0--FatTree;1--Clos;2--FullMesh;3--Torus;4--Test
     //fattree
     if (Topology_model==0){
-        k_fattree=4;//FatTree规模
+        k_fattree=16;//FatTree规模
         numHosts = k_fattree*k_fattree*k_fattree/4;//终端数量
         numCores = (k_fattree/2)*(k_fattree/2);//核心层交换机数量
         numAggregations = k_fattree*k_fattree/2;//汇聚层交换机数量
@@ -190,6 +192,46 @@ void SetupNetwork(){
         hosts.Create(numGPUs);
         NodeContainer nvswitch;
         nvswitch.Create(nvswitch_num);
+
+        #ifdef NS3_MPI
+        uint32_t numRanks = MpiInterface::GetSize();
+        for (uint32_t p = 0; p < k_fattree; ++p) { // 遍历所有 Pods (0 到 k-1)
+            // 计算当前 Pod 应该分配给哪个 Rank (SystemId)
+            uint32_t targetRank = p % numRanks;
+            
+            // 1.1 汇聚层交换机 (Aggregation Switches)
+            for (uint32_t i = 0; i < k_fattree / 2; ++i) { 
+                uint32_t aggIndex = p * (k_fattree / 2) + i;
+                aggregationSwitches.Get(aggIndex)->SetSystemId(targetRank);
+            }
+            
+            // 1.2 边缘层交换机 (Edge Switches)
+            for (uint32_t i = 0; i < k_fattree / 2; ++i) { 
+                uint32_t edgeIndex = p * (k_fattree / 2) + i;
+                edgeSwitches.Get(edgeIndex)->SetSystemId(targetRank);
+            }
+            
+            // 1.3 主机 (Hosts)
+            for (uint32_t i = 0; i < k_fattree * k_fattree / 4; ++i) { 
+                for(uint32_t j = 0; j < gpus_per_server ; ++j)
+                {
+                    uint32_t hostIndex = (p * (k_fattree * k_fattree / 4) + i) * gpus_per_server + j;
+                    hosts.Get(hostIndex)->SetSystemId(targetRank);                
+                }
+                for(uint32_t j = 0; j < nvswitch_per_server ; ++j)
+                {
+                    uint32_t nvswitchIndex = (p * (k_fattree * k_fattree / 4) + i) * nvswitch_per_server +  j;
+                    nvswitch.Get(nvswitchIndex)->SetSystemId(targetRank);
+                }
+            }
+        }
+        // 2. 核心层交换机分区 (Core Switches) - 轮询分配 (Round-Robin)
+        for (uint32_t i = 0; i < numCores; ++i) {
+            uint32_t targetRank = i % numRanks; // 核心交换机按索引轮询分配
+            coreSwitches.Get(i)->SetSystemId(targetRank);
+        }
+        #endif
+
 
         //为所有交换机创建 MinHopBridgeNetDevice
         for (uint32_t i = 0; i < coreSwitches.GetN(); ++i) {
@@ -318,6 +360,13 @@ void SetupNetwork(){
         uint16_t customEtherType = 0x88B5;
         // NS_LOG_INFO("为所有主机安装 HopCountClient 实现全网通信...");
         for (uint32_t i = 0; i < numGPUs; ++i){
+            Ptr<Node> clientNode = hosts.Get(i);
+            #ifdef NS3_MPI
+            if(clientNode->GetSystemId() != MpiInterface::GetSystemId())
+            {
+                continue;
+            }
+            #endif
             PacketSocketAddress clientSocketAddr;
             clientSocketAddr.SetSingleDevice(hostDevices[i]->GetIfIndex());
             clientSocketAddr.SetPhysicalAddress(hostMacs[numGPUs-i]);
@@ -336,6 +385,7 @@ void SetupNetwork(){
             clientApps.Stop(Seconds(floadtime-1));
         }
         for (uint32_t i = 0; i < numGPUs; ++i) {
+            Ptr<Node> clientNode = hosts.Get(i);
             uint16_t proto=0x9999;
             Ptr<sendflowclient> App = CreateObject<sendflowclient>();
             App->Setup_out_device(uint32_t(0));
@@ -354,6 +404,7 @@ void SetupNetwork(){
 
             nodeaddresstable[i]=clientSocketAddr;
             nodeapptable[i]=App;
+            nodetable[i] = clientNode;
         }
     }
     
@@ -508,12 +559,14 @@ void SetupNetwork(){
         NodeContainer hosts;
         hosts.Create(numGPUs);
 
+        #ifdef NS3_MPI
         uint32_t numRanks = MpiInterface::GetSize();
         uint32_t gpuPerRank = numGPUs/numRanks;
         for(uint32_t i = 0; i < numGPUs ; i++){
             uint32_t targetRank = i / gpuPerRank;
             hosts.Get(i) -> SetSystemId(targetRank);
         }        
+        #endif
 
         for (uint32_t i = 0; i < num_meshswitch; ++i) {
             Ptr<MinHopBridgeNetDevice> dev = CreateObject<MinHopBridgeNetDevice>();
@@ -564,10 +617,12 @@ void SetupNetwork(){
         uint16_t customEtherType = 0x88B5;
         // NS_LOG_INFO("为所有主机安装 HopCountClient 实现全网通信...");
         for (uint32_t i = 0; i < numGPUs; ++i){
+            #ifdef NS3_MPI
             if(hosts.Get(i)->GetSystemId() != MpiInterface::GetSystemId())
             {
                 continue;
             }
+            #endif
             for (uint32_t j = 0; j < numGPUs-1; ++j){
                 PacketSocketAddress clientSocketAddr;
                 clientSocketAddr.SetSingleDevice(1+j);
