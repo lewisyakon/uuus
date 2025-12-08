@@ -33,6 +33,7 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#include <chrono>
 #include "ns3/mtp-module.h"
 #ifdef NS3_MPI
 #include "ns3/mpi-module.h"
@@ -58,7 +59,7 @@ namespace conf
 {
   uint32_t system = 0;
   uint32_t rank = 0;
-  uint32_t thread = 1;
+  uint32_t thread = 4;
   bool nullmsg = false;
 }; 
 
@@ -317,6 +318,12 @@ void Initialize(int argc, char * argv[])
     #endif
 }
 
+std::chrono::high_resolution_clock::time_point global_start, global_end;
+
+void GetGlobalStart()
+{
+  global_start = std::chrono::high_resolution_clock::now();
+}
 
 int main(int argc, char *argv[]) {
 
@@ -416,6 +423,18 @@ int main(int argc, char *argv[]) {
         }
       }
   });
+
+  #ifdef NS3_MPI
+  if(MpiInterface::GetSystemId() == 0){
+    ns3::Simulator::Schedule(ns3::Seconds(floadtime-1),[](){
+      GetGlobalStart();
+    });    
+  }
+  #elif NS3_MTP
+  ns3::Simulator::Schedule(ns3::Seconds(floadtime-1),[](){
+    GetGlobalStart();
+  });  
+  #endif
   // ns3::Simulator::Schedule(ns3::Seconds(190), [nodes_num,systems](){
   //     printlearnstate();
   // });
@@ -451,6 +470,17 @@ int main(int argc, char *argv[]) {
     NS_LOG_INFO("[main] total send count="<<std::accumulate(sendCounts, sendCounts + conf::system, 0ULL));
     NS_LOG_INFO("[main] total events="<<std::accumulate(eventCounts, eventCounts + conf::system, 0ULL));
   }
+  #endif
+
+  global_end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(global_end - global_start);
+  #ifdef NS3_MPI
+  if(MpiInterface::GetSystemId() == 0)
+  {
+    std::cout<<"total runtime="<<duration.count()<<"ms"<<"\n";
+  }
+  #elif NS3_MTP
+  std::cout<<"total runtime="<<duration.count()<<"ms"<<"\n";
   #endif
 
   Simulator::Destroy();
