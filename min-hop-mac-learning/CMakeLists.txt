@@ -12,6 +12,7 @@ set(source_files
     model/my_sendflowclient.cc
     model/PppRoundRobinQueue.cc
     model/FlowTagHeader.cc
+    model/flow-io.cc
 )
 set(header_files
     model/min-hop-bridge-net-device.h
@@ -23,6 +24,7 @@ set(header_files
     model/my_sendflowclient.h
     model/PppRoundRobinQueue.h
     model/FlowTagHeader.h
+    model/flow-io.h
 )
 
 set(libstats

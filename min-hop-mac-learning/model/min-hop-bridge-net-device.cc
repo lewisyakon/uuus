@@ -835,7 +835,12 @@ MinHopBridgeNetDevice::GetMulticast(Ipv6Address addr) const
     NS_LOG_FUNCTION(this << addr);
     return Mac48Address::GetMulticast(addr);
 }
-
+void
+MinHopBridgeNetDevice::Print_LocalMacAddress() const
+{
+    NS_LOG_INFO("Learning State for Host on Node " << GetNode()->GetId() 
+    << " (Device MAC: " << GetAddress());
+}
 void
 MinHopBridgeNetDevice::PrintLearnedState() const
 {

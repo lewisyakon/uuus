@@ -69,6 +69,8 @@ class MinHopBridgeNetDevice : public NetDevice
     uint32_t GetNBridgePorts() const;
     Ptr<NetDevice> GetBridgePort(uint32_t n) const;
     void PrintLearnedState() const;
+    void Print_LocalMacAddress() const;
+    
     void AddEntry(Mac48Address mac, const std::vector<uint32_t>& ports);
     void set_ecmp_model(int model);
 
@@ -81,7 +83,7 @@ class MinHopBridgeNetDevice : public NetDevice
 
     void hostsend(Ptr<NetDevice> incomingPort,Ptr<const Packet> packet,uint16_t protocol,
                     const Address& src,const Address& dst);
-
+    
   protected:
     void DoDispose() override;
 

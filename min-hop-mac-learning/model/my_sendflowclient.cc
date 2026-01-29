@@ -17,32 +17,11 @@ NS_LOG_COMPONENT_DEFINE("SendFlowClient");
 
 sendflowclient::sendflowclient()
 {
-  Pronum=0x9999;
   reqlen=acklen=100;
-  is_fullmesh_or_torus=false;
+  localbridgeindex=0;
 }
 sendflowclient::~sendflowclient()
 {
-  for (auto ai:m_socket){
-    ai = nullptr;
-  }
-}
-
-
-void
-sendflowclient::Setup_out_device(uint32_t deviceIndex)
-{
-  outdeviceIndex = deviceIndex;
-}
-void
-sendflowclient::Setup_pronum(uint16_t pro)
-{
-  Pronum=pro;
-}
-void
-sendflowclient::addinerdevice(uint32_t deviceIndex)
-{
-  internaldeviceIndex.push_back(deviceIndex);
 }
 
 void sendflowclient::StartApplication()
@@ -52,12 +31,6 @@ void sendflowclient::StartApplication()
 
 void sendflowclient::StopApplication()
 {
-  for (auto ai:m_socket){
-    if (ai) {
-      ai->Close();
-      ai = 0;
-    }
-  }
 }
 
 
@@ -68,18 +41,14 @@ void sendflowclient::HandleRead(Ptr<Socket> socket)
   Address from;
 
   // --- 在循环外获取 MTU ---
-  // 因为在 REQUEST 分支中（逻辑2）需要用 MTU 来计算
   Ptr<Node> node = GetNode();
   Ptr<NetDevice> device;
-  if (is_fullmesh_or_torus) device = node->GetDevice(1);
-  else device = node->GetDevice(0);
+  device=node->GetDevice(localbridgeindex);
   ThreePHeader tempTPH; // 临时对象用于获取大小
   HopCountHeader tempHH; // 临时对象用于获取大小
   // uint16_t m_mtu = device->GetMtu() - tempTPH.GetSerializedSize() - tempHH.GetSerializedSize();
   uint16_t m_mtu = device->GetMtu();
-  // --- MTU 获取结束 ---
-  
-  
+
   while ((packet = socket->RecvFrom(from))) {
     Ptr<Packet> p = packet->Copy();
     ThreePHeader TPheader;
@@ -111,25 +80,6 @@ void sendflowclient::HandleRead(Ptr<Socket> socket)
     {
     case ThreePHeader::REQUEST:
     {
-      // // 逻辑2: (发送方) 收到 REQUEST。计算期望的 ACT 数量
-      // // 这里的计算必须和 SendPacket 中 DATA 循环逻辑一致
-      // uint64_t numPackets;
-      // if (datasize<m_mtu) numPackets=1;
-      // else {
-      //   if (datasize % m_mtu==0) numPackets=datasize / m_mtu;
-      //   else numPackets = (datasize / m_mtu) + 1;
-      // }
-        
-      // // m_ackPacketsExpected[{tag,{src,dst}}] = numPackets;
-      // m_ackPacketsExpected[{tag,{src,dst}}] = 1;
-      // m_ackPacketsReceived[{tag,{src,dst}}] = 0; // 初始化 ACT 计数器
-      // // NS_LOG_INFO("Flow " << flowid << ": (Sender) Expecting " << numPackets << " ACT packets.");
-      // // realsend(packet,from,4,formIndex);
-      // if (is_fullmesh_or_torus) SendPacket(ThreePHeader::DATA,from,TPheader.GetDataSize(),tag,src,dst,5,formIndex);
-      // else SendPacket(ThreePHeader::DATA,from,TPheader.GetDataSize(),tag,src,dst,4,formIndex);
-      // NS_LOG_INFO("[RZV] REQUEST arrived tag="<<tag<<" src="<<src<<" dst="<<dst
-      //       <<" time="<<Simulator::Now().GetFemtoSeconds()
-      //       <<" has_recvfunc="<<(m_recvfunctable.count({tag,{src,dst}})!=0));
       if(check_recvfunc(tag,src,dst) == false){
         m_recvfuncflag[{tag,{src,dst}}] = 1;
         return ;
@@ -137,8 +87,6 @@ void sendflowclient::HandleRead(Ptr<Socket> socket)
       fuc_and_par fp = m_recvfunctable[{tag,{src,dst}}];
       fp.msg_handler(fp.fun_arg); 
       m_recvfunctable.erase({tag,{src,dst}});
-
-      
     }
     break;
 
@@ -168,19 +116,10 @@ void sendflowclient::HandleRead(Ptr<Socket> socket)
               uint32_t ackTag  = tag;
               uint32_t ackSrc  = src;
               uint32_t ackDst  = dst;
-              int      ackSendModel = is_fullmesh_or_torus ? 5 : 4;
               int      ackIndex     = formIndex;
-              
-              ns3::Simulator::ScheduleWithContext((this->GetNode()->GetId()), Seconds(0), [this,ackDest,acksize,ackTag,ackSrc,ackDst,ackSendModel,ackIndex](){
-                  SendPacket(ThreePHeader::ACT,ackDest,acksize,ackTag,ackSrc,ackDst,ackSendModel,ackIndex); });              
-              // if (is_fullmesh_or_torus)
-              // {
-              //   SendPacket(ThreePHeader::ACT,from,acklen,tag,src,dst,5,formIndex);                 
-              // }
-              // else
-              // {
-              //   SendPacket(ThreePHeader::ACT,from,acklen,tag,src,dst,4,formIndex);
-              // }
+              ns3::Simulator::ScheduleWithContext((this->GetNode()->GetId()), Seconds(0), [this,ackDest,acksize,ackTag,ackSrc,ackDst,ackIndex](){
+                  SendPacket(ThreePHeader::ACT,ackDest,acksize,ackTag,ackSrc,ackDst,FlowSendMode::Loopback,ackIndex); });              
+
 
               m_recvHash[{tag,{src,dst}}]=m_alldatasize[{tag,{src,dst}}];
               if (check_recvfunc(tag,src,dst)){
@@ -191,6 +130,8 @@ void sendflowclient::HandleRead(Ptr<Socket> socket)
 
                 fp.msg_handler(fp.fun_arg); 
                 m_recvHash.erase({tag,{src,dst}});
+                m_recvfunctable.erase({tag,{src,dst}});
+                m_request.erase({tag,{src,dst}});
                 NS_LOG_INFO("{tag,src,dst}= " << tag<<"  "<<src<<" "<<dst 
                   << " 接收完成; TIME= "<<Simulator::Now().GetFemtoSeconds());
               }
@@ -245,13 +186,10 @@ void sendflowclient::HandleRead(Ptr<Socket> socket)
 }
 
 void
-sendflowclient::TriggerSendTo_now(PacketSocketAddress dstadd,uint64_t datasize,uint32_t tag,uint32_t src,uint32_t dst,int sendmodel)
+sendflowclient::TriggerSendTo_now(PacketSocketAddress dstadd,uint64_t datasize,uint32_t tag,uint32_t src,uint32_t dst,FlowSendMode sendmodel)
 {
-  // NS_LOG_INFO("[" << this->GetNode()->GetId() << "]" << "TriggerSendTo_now declared now time = "  << Simulator::Now().GetFemtoSeconds()
-  //             <<"  sendsize = "<<datasize<<"  dest = "<<dstadd);
-  NS_LOG_INFO("[TriSend] src="<<src<<" dst="<<dst<<" tag="<<tag<<" size="<<datasize);
-  // SendPacket(ThreePHeader::REQUEST, dstadd, datasize, tag,src,dst,sendmodel);
-  if(datasize == 1024)
+  NS_LOG_INFO("TriggerSendTo_now declared now time = "  << Simulator::Now().GetFemtoSeconds()<<" src="<<src<<" dst="<<dst<<" tag="<<tag<<" size="<<datasize);
+  if(datasize == 1023)
   {
     ns3::Simulator::ScheduleWithContext((this->GetNode()->GetId()), Seconds(0), [this,dstadd,datasize,tag,src,dst,sendmodel](){
       SendPacket(ThreePHeader::REQUEST, dstadd, datasize, tag,src,dst,sendmodel);});
@@ -263,88 +201,43 @@ sendflowclient::TriggerSendTo_now(PacketSocketAddress dstadd,uint64_t datasize,u
   }
 }
 void
-sendflowclient::realsend(Ptr<Packet> packet,const Address& dest,int sendmodel,int mindex)
+sendflowclient::realsend(Ptr<Packet> packet,const Address& dest,FlowSendMode sendmodel,int mindex)
 {
-  PacketSocketAddress now_dest=PacketSocketAddress::ConvertFrom(dest);
-
-  if (sendmodel==0){//外部
-    now_dest.SetSingleDevice(outdeviceIndex);
-    Ptr<Socket> sock=m_socket[m_socket.size()-1];
-    sock->SendTo(packet,0,now_dest);
-  }
-  if (sendmodel==1){//内部（且无nvls）,随机找一个内部出端口扔出去
-    auto nowsys = std::chrono::system_clock::now();
-    auto duration = nowsys.time_since_epoch();
-    uint64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
-    uint32_t seed = static_cast<uint32_t>(now);
-    uint32_t outindex = seed % (m_socket.size()-1);//因为包含一个外部端口
-    Ptr<Socket> sock=m_socket[outindex];
-
-    now_dest.SetSingleDevice(internaldeviceIndex[outindex]);
-    sock->SendTo(packet,0,now_dest);
-  }
-  if (sendmodel==2){//内部（nvls）
-
-  }
-  if (sendmodel==4){//无条件回送(可能有点小问题)/确实有问题
-    int m_index=0;
-    if (mindex==-1) m_index=m_socket.size()-1;
-    else m_index=mindex;
-    // if (m_index==m_socket.size()-1) now_dest.SetSingleDevice(outdeviceIndex);
-    // else now_dest.SetSingleDevice(internaldeviceIndex[m_index]);
-    now_dest.SetSingleDevice(m_index);
-
-    Ptr<Socket> sock=m_socket[m_index];
-    sock->SendTo(packet,0,now_dest);
-  }
-  if (sendmodel==5){//送本地交换机
-    m_bridge->hostsend(this->GetNode()->GetDevice(0),packet,
-                        0x9999,m_bridge->GetAddress(),now_dest.GetPhysicalAddress());
-  }
+    m_io->Send(dest,packet,sendmodel,mindex);
 }
 
-void
-sendflowclient::initialization()
-{
-    // 创建 PacketSocket（关键）
-    TypeId tid = TypeId::LookupByName("ns3::PacketSocketFactory");
-    if (is_fullmesh_or_torus){
-      Ptr<Socket> sock = Socket::CreateSocket (GetNode(), tid);
-      PacketSocketAddress addr;
-      addr.SetSingleDevice (0);
-      addr.SetProtocol(Pronum);
-      sock->Bind (addr);
 
-      sock->SetRecvCallback(MakeCallback(&sendflowclient::HandleRead, this));
-      m_socket.push_back (sock);
-    }
-    else{
-      //每一个packetsocket对应一个端口
-      for (int i=0;i<internaldeviceIndex.size();i++){//内部交换机端口
-        Ptr<Socket> sock = Socket::CreateSocket (GetNode(), tid);
-        PacketSocketAddress addr;
-        addr.SetSingleDevice (internaldeviceIndex[i]);
-        addr.SetProtocol(Pronum);
-        sock->Bind (addr);
-        
-        sock->SetRecvCallback(MakeCallback(&sendflowclient::HandleRead, this));
-        m_socket.push_back (sock);
-      }
-      //外部交换机唯一端口
-      Ptr<Socket> sock = Socket::CreateSocket (GetNode(), tid);
-      PacketSocketAddress addr;
-      addr.SetSingleDevice (outdeviceIndex);
-      addr.SetProtocol(Pronum);
-      sock->Bind (addr);
-      sock->SetRecvCallback(MakeCallback(&sendflowclient::HandleRead, this));
-      m_socket.push_back (sock);
-    }
-    
+void
+sendflowclient::initialization(uint16_t Pronum,uint32_t m_outDev,uint32_t m_innerDev,Ptr<NetDevice> bridgenode)
+{
+    localbridgeindex=m_innerDev;
+    if (!m_io) m_io = ns3::CreateObject<ns3::FlowIo>();
+    m_io->SetNode(GetNode());
+    m_io->SetProtocol(Pronum);
+    m_io->SetOutDeviceIndex(m_outDev);
+    m_io->SetInnerDeviceIndex(m_innerDev);   // 一般固定=0
+    m_io->SetLocalBridge(bridgenode);            // 保证它就是 device0
+    m_io->SetRxBindMode(RxBindMode::BridgeAndExternal);
+
+    m_io->Start(MakeCallback(&sendflowclient::HandleRead, this));
+}
+void
+sendflowclient::initialization(uint16_t Pronum,uint32_t m_innerDev,Ptr<NetDevice> bridgenode)
+{
+    localbridgeindex=m_innerDev;
+    if (!m_io) m_io = ns3::CreateObject<ns3::FlowIo>();
+    m_io->SetNode(GetNode());
+    m_io->SetProtocol(Pronum);
+    m_io->SetInnerDeviceIndex(m_innerDev);   // 一般固定=0
+    m_io->SetLocalBridge(bridgenode);            // 保证它就是 device0
+    m_io->SetRxBindMode(RxBindMode::BridgeOnly);
+
+    m_io->Start(MakeCallback(&sendflowclient::HandleRead, this));
 }
 
 void
 sendflowclient::SendPacket(ThreePHeader::State state, const Address& dest, uint64_t datasize,
-  uint32_t tag,uint32_t src,uint32_t dst,int sendmodel,int mindex)
+  uint32_t tag,uint32_t src,uint32_t dst,FlowSendMode sendmodel,int mindex)
 {
   // NS_LOG_INFO("[" << this->GetNode()->GetId() << "]" << "SendPacket running now time = "  << Simulator::Now().GetFemtoSeconds());
   //这里需要先判断目标点和本机是否在一个机内
@@ -364,20 +257,8 @@ sendflowclient::SendPacket(ThreePHeader::State state, const Address& dest, uint6
   Ptr<NetDevice> device = node->GetDevice(0);
   // uint16_t m_mtu=device->GetMtu()-TPheader.GetSerializedSize()-hopHeader.GetSerializedSize();
   uint16_t m_mtu=device->GetMtu();
-  //逻辑1：如果是req包，根据mtu计算需要收多少包，并用数据结构存储（根据flowid），接受时根据flowid统计到达个数
+ 
   if (state == ThreePHeader::REQUEST) {
-      // NS_LOG_INFO("[" << this->GetNode()->GetId() << "]" << "SendPacket running now time = "  << Simulator::Now().GetFemtoSeconds());
-      // uint64_t numPackets;
-      // if (datasize<m_mtu) numPackets=1;
-      // else {
-      //   if (datasize % m_mtu==0) numPackets=datasize / m_mtu;
-      //   else numPackets = (datasize / m_mtu) + 1;
-      // }
-      
-      // m_dataPacketsExpected[{tag,{src,dst}}] = numPackets;
-      // m_dataPacketsReceived[{tag,{src,dst}}] = 0; // 初始化接收计数器
-
-      // NS_LOG_INFO("Flow " << flowid << ": (Receiver) Expecting " << numPackets << " DATA packets.");
       uint16_t real_packet_size=reqlen-TPheader.GetSerializedSize()-hopHeader.GetSerializedSize();
       packet = Create<Packet>(real_packet_size);
       TPheader.SetDataSize(datasize);
@@ -392,7 +273,6 @@ sendflowclient::SendPacket(ThreePHeader::State state, const Address& dest, uint6
       // m_alldatasize[{tag,{src,dst}}]=datasize;
   }
   
-  //逻辑2：如果是发送端，同样计算需要多少包，并用结构存储，但是这个结构用于统计ACK个数，这两个结构分开。
   if (state==ThreePHeader::DATA){
     uint64_t numPackets;
     if (datasize<m_mtu) numPackets=1;
@@ -426,7 +306,6 @@ sendflowclient::SendPacket(ThreePHeader::State state, const Address& dest, uint6
         packet->AddHeader(hopHeader);
         
         realsend(packet,dest,sendmodel,mindex);
-        // m_socket->SendTo(packet, 0, dest);
       
         len-=m_mtu;
     }
@@ -438,7 +317,6 @@ sendflowclient::SendPacket(ThreePHeader::State state, const Address& dest, uint6
       packet->AddHeader(TPheader);
       packet->AddHeader(hopHeader);
       realsend(packet,dest,sendmodel,mindex);
-      // m_socket->SendTo(packet, 0, dest);
   }
     
   
@@ -496,13 +374,6 @@ AstraSim::sim_request
 sendflowclient::get_flowtag(int tag,int src,int dst){
   return m_request[{tag,{src,dst}}];
 }
-void
-sendflowclient::set_localbridge(Ptr<MinHopBridgeNetDevice> bri){
-    m_bridge=bri;
-}
-void
-sendflowclient::set_isfullortorus(bool truth){
-    is_fullmesh_or_torus=truth;
-}
+
 
 }

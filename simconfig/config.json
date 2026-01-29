@@ -1,0 +1,32 @@
+{
+  "workloadpath": "simworkload/microAllReduce.txt",
+  "thread": 1,
+  "gpu_type": "A100",                
+  "gpus_per_server": 1,
+  "nvswitch_per_server": 1,
+
+  "network": {
+    "ecmpmodel": 1,                  
+    "max_jump": 5,
+    "mtu": 4096,
+    "normallink_rate": "224Gbps",
+    "nvlink_rate": "2400Gbps",
+    "normallink_delay": "5ns",
+    "nvlink_delay": "15ns",
+    "drop_tail_queue_size": "1000000",
+    "drop_tail_queue_num": "16"
+  },
+
+  "workload": {
+    "floadtime_s": 500               
+  },
+
+  "topology": {
+    "model": "fattree",
+    "k": 4,
+    "subnet_model": 0,              
+    "subnet_k": 4,                             
+    "hostperleaf": 2,                            
+    "switch_delay_ns_override": 100 
+  }
+}
