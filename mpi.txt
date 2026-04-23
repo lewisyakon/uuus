@@ -50,6 +50,9 @@ fat-tree-mpi：
 2.docker内ssh免密连接，需要在Dockerfile使用host模式，即容器和宿主机使用相同ip
   使用的密钥可以是宿主机原本就有的，把原有的密钥挂载到容器内指定路径，写好config文件即可，这个config文件可以是NFS里的挂载到容器里
  其中需要注意的问题是ssh免密互连对文件权限要求很高，authorized_keys必须是连接的用户所有且权限必须是600
+  直接挂载宿主机下的~/.ssh整个文件夹，再加一个ssh-agent实现免密互连
+  eval "$(ssh-agent -s)"
+  ssh-add /home/lympi/.ssh/lewis_254_idrsa
 3.利用mpirun跑多节点多进程，要求不能是root用户，在Dockerfile创建好新用户，且这个用户的uid要和两个宿主机所用uid最好四个都是相同的，因为要用NFS共享文件夹和ssh互连
 4.NFS共享文件夹的客户端对于其中的文件，读权限是根据NFS服务器端该文件夹的所有者的uid决定，写权限根据映射规则决定，即客户端的uid映射成服务器上的什么uid
 5.mpirun要求ssh免密互连是建立连接，对应的进程之间通信选用的端口是底层动态选择，容器内有一些虚拟ip和端口会影响其选通信端口，要通过--mca btl_tcp_if_include 10.201.0.0/16限制所选ip范围
