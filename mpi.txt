@@ -90,6 +90,16 @@ docker run -d \
 
 docker exec -it hybrid-188 /bin/bash
 
+mpirun \
+  --wdir /mnt/nfs/cloud/sim-ly \
+  --launch-agent "/usr/local/bin/mpi-docker-agent /usr/bin/orted" \
+  --mca btl_tcp_if_include ztkse63itn \
+  --mca oob_tcp_if_include ztkse63itn \
+  -np 2 --host lab206:2 --map-by ppr:2:node:PE=2 --bind-to none \
+  /mnt/nfs/cloud/sim-ly/build/scratch/ns3.44-my_AstraSimNetwork-default : \
+  -np 2 --host lab254:2 --map-by ppr:2:node:PE=2 --bind-to none \
+  /mnt/nfs/cloud/sim-ly/build/scratch/ns3.44-my_AstraSimNetwork-default
+
 #!/bin/sh
 set -eu
 
