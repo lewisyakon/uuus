@@ -88,6 +88,16 @@ docker run -d \
   -e SSH_AUTH_SOCK=/ssh-agent \
   hybrid-x-lab:v0
 
+docker run -d \
+  --name hybrid-133 \
+  --network host \
+  --memory=80g --memory-swap=80g \
+  -v /mnt/nfs/cloud:/mnt/nfs/cloud \
+  -v /home/lewis/.ssh:/home/lympi/.ssh \
+  -v $SSH_AUTH_SOCK:/ssh-agent \
+  -e SSH_AUTH_SOCK=/ssh-agent \
+  hybrid-x-lab:v0
+
 docker exec -it hybrid-188 /bin/bash
 
 mpirun \
@@ -100,6 +110,8 @@ mpirun \
   -np 2 --host lab254:2 --map-by ppr:2:node:PE=2 --bind-to none \
   /mnt/nfs/cloud/sim-ly/build/scratch/ns3.44-my_AstraSimNetwork-default
 
+
+--------------------------------------------------------------------------
 #!/bin/sh
 set -eu
 
@@ -111,6 +123,12 @@ case "$host" in
     ;;
   user-Super-Server|lab254)
     container="hybrid-254"
+    ;;
+  seu-Precision-7920-Tower|lab188)
+    container="hybrid-188"
+    ;;
+  user-System-Product-Name|lab133)
+    container="hybrid-133"
     ;;
   *)
     echo "mpi-docker-agent: unsupported host: $host" >&2
@@ -134,42 +152,6 @@ if ! "$DOCKER_BIN" inspect -f '{{.State.Running}}' "$container" 2>/dev/null | gr
 fi
 
 exec "$DOCKER_BIN" exec -i "$container" "$@"
-
-sudo tee /usr/local/bin/mpi-docker-agent >/dev/null <<'EOF'
-#!/bin/sh
-set -eu
-
-host="$(hostname -s 2>/dev/null || hostname)"
-
-case "$host" in
-  Super-Server|lab206)
-    container="hybrid-206"
-    ;;
-  user-Super-Server|lab254)
-    container="hybrid-254"
-    ;;
-  *)
-    echo "mpi-docker-agent: unsupported host: $host" >&2
-    exit 2
-    ;;
-esac
-
-DOCKER_BIN="${DOCKER_BIN:-/usr/bin/docker}"
-if [ ! -x "$DOCKER_BIN" ]; then
-  DOCKER_BIN="$(command -v docker || true)"
-fi
-
-if [ -z "${DOCKER_BIN:-}" ] || [ ! -x "$DOCKER_BIN" ]; then
-  echo "mpi-docker-agent: docker not found" >&2
-  exit 3
-fi
-
-if ! "$DOCKER_BIN" inspect -f '{{.State.Running}}' "$container" 2>/dev/null | grep -qx true; then
-  echo "mpi-docker-agent: container $container is not running on $host" >&2
-  exit 4
-fi
-
-exec "$DOCKER_BIN" exec -i "$container" "$@"
-EOF
+--------------------------------------------------------------------------
 
 sudo chmod +x /usr/local/bin/mpi-docker-agent
